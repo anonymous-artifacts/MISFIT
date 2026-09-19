@@ -300,15 +300,6 @@ __global__ void process_clusters_csr_kernel(const DeviceEdge* edges, DeviceVerte
                     for (int j = 0; j < count; j++) {
                         int neighbor = neighborhood_elements[start + j];
                         if (!nodes[neighbor].membership) {
-                            // A candidate can only be safely added if we can verify it has no
-                            // MIS neighbor of its own -- which requires ITS OWN row (only
-                            // populated if it was independently a batch/seed vertex this
-                            // sub-batch). A bystander candidate (swept into to_remove's 2-hop
-                            // set but not itself a participant) has no such row; previously this
-                            // silently defaulted to "safe to add", which could add a vertex
-                            // next to an already-in-MIS neighbor we have no way to see --
-                            // a real independence violation. Skip unverifiable candidates
-                            // instead of risking that.
                             int nbr_idx = vertex_to_idx_map[neighbor];
                             if (nbr_idx == -1) continue;
                             bool can_add = true;

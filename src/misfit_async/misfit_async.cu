@@ -674,11 +674,6 @@ class GPUVertexClusteringGraph {
             return result;
         }
 
-        // Waits for exactly THIS batch's own GPU work (its last sub-batch's
-        // channel event), deliberately NOT a full stream sync, so a
-        // later batch already enqueued on the same stream is undisturbed.
-        // Then reads back this batch's own timing events (safe: recorded
-        // strictly before the channel event we just waited on).
         void syncAndCollect(LaunchedBatch& launched, DetailedTimings& timings) {
             if (launched.events_list.empty()) return;
             CUDA_CHECK(cudaEventSynchronize(channel_sync_event[launched.last_channel_used]));
@@ -747,12 +742,6 @@ LaunchedGPUBatch launchBatchGPU(vector<Edge>& batch, HybridGraph& graph, GPUVert
 void collectBatchGPU(GPUVertexClusteringGraph& gpu_graph, LaunchedGPUBatch& lb, DetailedTimings& batch_timings) {
     gpu_graph.syncAndCollect(lb.launched, batch_timings);
     auto total_end = chrono::high_resolution_clock::now();
-    // NOTE: with pipelining, this is (collect_end - this_batch's_own_launch_start),
-    // a per-batch latency figure, but during part of that interval
-    // the CPU may have also been busy launching a LATER batch, so per-batch
-    // times no longer sum to the true overall wall-clock the way we did in
-    // the sequential original. See pipeline_wall_start/end in main() for the
-    // real total.
     batch_timings.total_batch_time = chrono::duration_cast<chrono::microseconds>(total_end - lb.launch_start).count() / 1000.0;
     batch_timings.calculateAggregates();
 }
@@ -836,10 +825,6 @@ int main(int argc, char* argv[]) {
     vector<DetailedTimings> per_batch_timings(num_insertion_batches);
 
     // ---- Pipelined loop: launch(i+1) before collect(i) ----
-    // Prime the pipeline with batch 0, then for each i, launch batch i+1
-    // (its CPU-heavy neighborhood computation runs while batch i's GPU
-    // kernels, already enqueued on the shared stream, keep executing) BEFORE
-    // waiting for batch i's own results. Drain the last batch after the loop.
     auto pipeline_wall_start = chrono::high_resolution_clock::now();
 
     LaunchedGPUBatch launched_current;
